@@ -95,7 +95,7 @@ class SinSinData:
     def __init__(self):
         x,y = sp.symbols("x,y")
         pi = np.pi
-        u = 
+
         u = sp.lambdify((x,y),sp.sin(pi*x)+sp.sin(pi*y),"numpy")
        # Du = sp.lambdify(np.array([[sp.diff(u,x,1)],[sp.diff(u,y,2)]]))
         #f = sp.lambdify(-(sp.diff(u,x,2)+sp.diff(u,y,2))+3*u)
