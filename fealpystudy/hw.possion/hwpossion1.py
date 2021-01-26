@@ -1,11 +1,13 @@
 import sys
 import numpy as np
+import sympy as sp
 from scipy.sparse.linalg import spsolve
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from pde_model import SinCosData
+from pde_models import Laplacess
 from fealpy.mesh import MeshFactory
 from fealpy.functionspace import LagrangeFiniteElementSpace
 import fealpy.boundarycondition as bdc
@@ -16,7 +18,16 @@ from fealpy.tools.show import showmultirate, show_error_table
 p = int(sys.argv[1])
 n = int(sys.argv[2])
 
-pde = SinCosData()
+x, y = sp.symbols("x0,x1")
+u = sp.cos(sp.pi*x)*sp.sin(sp.pi*y)
+
+
+
+
+
+#pde = SinCosData()
+pde = Laplacess(u,x,y,Dirichletbd = '(y == 1.0) | (y == 0.0)',
+Neumannbd = 'x == 0.0',Robinbd = 'x == 1.0')
 domain = pde.domain()
 
 mf = MeshFactory()
