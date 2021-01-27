@@ -6,8 +6,8 @@ from scipy.sparse.linalg import spsolve
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from pde_model import SinCosData
-from pde_models import Laplacess
+
+from pde_model1 import Laplace
 from fealpy.mesh import MeshFactory
 from fealpy.functionspace import LagrangeFiniteElementSpace
 import fealpy.boundarycondition as bdc
@@ -22,11 +22,7 @@ x, y = sp.symbols("x0,x1")
 u = sp.cos(sp.pi*x)*sp.sin(sp.pi*y)
 
 
-
-
-
-#pde = SinCosData()
-pde = Laplacess(u,x,y,Dirichletbd = '(y == 1.0) | (y == 0.0)',
+pde = Laplace(u,x,y,Dirichletbd = '(y == 1.0) | (y == 0.0)',
 Neumannbd = 'x == 0.0',Robinbd = 'x == 1.0')
 domain = pde.domain()
 

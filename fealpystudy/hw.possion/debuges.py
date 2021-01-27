@@ -1,15 +1,15 @@
 import numpy as np
-from pde_models import Laplaces
-#from pde_models import test
-from pde_model import SinCosData
+import sympy as sp
+from pde_model2 import generalelliptic
+
 
 p = np.array([[1,0],[0,1]],dtype=np.float64)  
 
-pdes = SinCosData()
-pde = Laplaces()
-#ts =  test()
-#s = pde.solution(p)
-s = pde.gradient(p)
-#s = ts.solution(p)
-#s = pdes.solution(p)
-print(type(s))
+
+x, y = sp.symbols("x0,x1")
+a = sp.Matrix([[x*y,x],[y,x]])
+u = sp.cos(sp.pi*x)*sp.sin(sp.pi*y)
+
+pde = generalelliptic(u,x,y,a=a)
+pde.test()
+print(a)
