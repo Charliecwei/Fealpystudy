@@ -43,6 +43,7 @@ for i in range(4):
     A = space.stiff_matrix()
     M = space.mass_matrix()
     F = space.source_vector(pde.source)
+   
 
     A = np.add(A,3*M)
 

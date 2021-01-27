@@ -20,18 +20,21 @@ class generalelliptic:
 
         if b is None:
             b = np.array([0.0,0.0],dtype=np.float64)
+            
 
         if c is None:
             c = np.array([0.0],dtype=np.float64)
 
         
-        f = -(sp.diff(a[0,0]*Du0+a[0,1]*Du1,x,1)+sp.diff(a[1,0]*Du0+a[1,1]*Du1,y,1))
-        +b[0]*Du0+b[1]*Du1+c*u
+        f = -(sp.diff(a[0,0]*Du0+a[0,1]*Du1,x,1)+sp.diff(a[1,0]*Du0+a[1,1]*Du1,y,1))+b[0]*Du0+b[1]*Du1+c*u
+
+
 
         self.u = sp.lambdify((x,y), u,'numpy')
         self.f = sp.lambdify((x,y), f,'numpy')
         self.Du0 = sp.lambdify((x,y), Du0,'numpy')
         self.Du1 = sp.lambdify((x,y), Du1,'numpy')
+      
 
         if type(a) is np.ndarray:
             self.a = a
@@ -40,21 +43,57 @@ class generalelliptic:
 
         if type(b) is np.ndarray:
             self.b = b
+            divb = np.array([0.0], dtype = np.float64)
+            self.divb = divb
         else:
             self.b = sp.lambdify((x,y), b,'numpy')
+            divb = sp.diff(b[0],x,1)+sp.diff(b[1],y,1)
+            self.divb = sp.lambdify((x,y), divb,'numpy')
 
 
         if type(c) is np.ndarray:
             self.c = c
         else:
             self.c = sp.lambdify((x,y), c,'numpy')
+            
+        self.tes = f
+        self.tesu = u
+    
 
-
-
+    def test(self):
+        print(self.tes)
 
 
     def domain(self):
         return np.array([0, 1, 0, 1])
+
+
+    def A(self, p):
+        if type(self.a) is np.ndarray:
+            return self.a
+        else:
+            return self.a(p[...,0],p[...,1]).transpose(2,3,0,1)
+
+    def B(self, p):
+        if type(self.b) is np.ndarray:
+            return self.b
+        else:
+            return np.squeeze(self.b(p[...,0],p[...,1]).transpose(2,3,0,1))
+
+    def C(self, p):
+        if type(self.c) is np.ndarray:
+            return self.c
+        else:
+            #return print(self.a)
+            return self.c(p[...,0],p[...,1])
+
+    def DivB(self, p):
+        if type(self.divb) is np.ndarray:
+            return self.divb
+        else:
+            return self.divb(p[...,0],p[...,1])#.transpose(2,3,0,1))
+
+
 
     @cartesian
     def solution(self, p):
@@ -62,7 +101,7 @@ class generalelliptic:
 
     @cartesian
     def source(self, p):
-        return self.f(p[...,0],p[...,1])
+        return np.squeeze(self.f(p[...,0],p[...,1]))
 
     @cartesian
     def gradient(self, p):
@@ -125,7 +164,3 @@ class generalelliptic:
 
 
 
-
-
-    def test(self):
-        print(self.a)
