@@ -19,12 +19,14 @@ print('cell2dof:')
 for i, val in enumerate(cell2dof):
     print(i, ": ", val)
 
+'''
 fig = plt.figure()
 axes = fig.gca()
 mesh.add_plot(axes)
 mesh.find_node(axes, showindex=True, fontsize=24)
 mesh.find_edge(axes, showindex=True, fontsize=22)
 mesh.find_cell(axes, showindex=True, fontsize=20)
+'''
 
 fig = plt.figure()
 axes = fig.gca()
