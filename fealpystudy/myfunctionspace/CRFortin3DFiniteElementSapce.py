@@ -121,7 +121,53 @@ class CRFortin3DFiniteElementSpace():
 
         return phi[..., None, :] #(..., 1, ldof)
 
+    @barycentric
+    def grad_basis(self, bc, index=np.s_[:]):
+        """
+        compute the grad basis function values at barycentric point bc
 
+        Parameters
+        ----------
+        bc : numpy.ndarray
+            the shape of `bc` can be `(NQ, TD+1)`
+
+        Returns
+        -------
+        gphi : numpy.ndarray
+            the shape of `gphi` can b `(NC, ldof, GD)' or
+            `(NQ, NC, ldof, GD)'
+        """
+        mesh = self.mesh
+        grad_lambda = mesh.grad_lambda()[index] #(NC, TD+1, GD)
+        print(grad_lambda.shape, len(bc.shape), bc)
+        gphie = 4*(bc[...,None,[0,0,0,1,1,2],None]*grad_lambda[...,[1,2,3,2,3,3],:]
+                    +bc[...,None,[1,2,3,2,3,3],None]*grad_lambda[...,[0,0,0,1,1,2],:])
+        gphif = 4*(bc[...,None,:,None]-1)*grad_lambda - 6*(bc[...,None,[1,2,3,0],None]*grad_lambda[...,[1,2,3,0],:]
+                                + bc[...,None,[2,3,0,1],None]*grad_lambda[...,[2,3,0,1],:]
+                                +bc[...,None,[3,0,1,2],None]*grad_lambda[...,[3,0,1,2],:])
+        gphic = -8*np.sum(bc[...,None,:,None]*grad_lambda,-2)
+        gphic = gphic[...,None,:]
+
+        
+        NQ = bc.shape[0]
+        NC = grad_lambda.shape[0]
+        ldof = self.number_of_local_dofs()
+        GD = self.geo_dimension()
+        shape = (NQ,NC,ldof,GD)
+        
+        gphi = np.empty(shape)
+
+        gphi[...,0:6,:] = gphie
+        gphi[...,6:10,:] = gphif
+        gphi[...,10:11,:] = gphic 
+        print(gphie.shape,gphif.shape,gphic.shape,gphi.shape)
+        '''
+        if len(bc.shape) == 1:
+            gphie = np.einsum('i, jil->jil',4*bc[[0,0,0,1,1,2]],grad_lambda[...,[1,2,3,2,3,3],:])+np.einsum('i, jil->jil',4*bc[[1,2,3,2,3,3]],grad_lambda[...,[0,0,0,1,1,2],:])
+        else:
+            gphie = np.einsum('mi, jil->mjil',4*bc[...,[0,0,0,1,1,2]],grad_lambda[...,[1,2,3,2,3,3],:])+np.einsum('i, jil->jil',4*bc[...,[1,2,3,2,3,3]],grad_lambda[...,[0,0,0,1,1,2],:])
+        '''
+        return gphi
 
 
 
@@ -138,17 +184,18 @@ if __name__ == '__main__':
     from mpl_toolkits.mplot3d import Axes3D
 
     mf = MeshFactory()
-    #mesh = mf.boxmesh3d([0,1,0,1,0,1], nx=1,ny=1,nz=1,meshtype='tet')
-    mesh = mf.one_tetrahedron_mesh()
+    mesh = mf.boxmesh3d([0,1,0,1,0,1], nx=2,ny=2,nz=2,meshtype='tet')
+    #mesh = mf.one_tetrahedron_mesh()
     space = CRFortin3DFiniteElementSpace(mesh)
     dof = CR_FortinDof(mesh)
     ipoints = dof.interpolation_points()
     cell2dof = dof.cell_to_dof()
-    qf = mesh.integrator(1, 'cell')
+    qf = mesh.integrator(2, 'cell')
     bcs, ws = qf.get_quadrature_points_and_weights()
 
     phi = space.basis(bcs)
-    print(phi)
+    gphi = space.grad_basis(bcs)
+    print(cell2dof.shape, phi.shape, gphi.shape)
     
 
 
