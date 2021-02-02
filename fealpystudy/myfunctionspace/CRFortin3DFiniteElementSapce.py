@@ -116,10 +116,13 @@ class CRFortin3DFiniteElementSpace():
         phie = 4*bc[...,[0,0,0,1,1,2]]*bc[...,[1,2,3,2,3,3]] #(NQ,6)
         phif = 2*(1-bc)**2-3*(bc[...,[1,2,3,0]]**2+bc[...,[2,3,0,1]]**2+bc[...,[3,0,1,2]]**2) #(NQ,4)
         phic = 2-4*np.sum(bc**2,-1) #(NQ,1)
+        if len(bc.shape)==1:
+            phi = np.concatenate([phie,phif,[phic]])
+        else:
+            phi = np.vstack((phie.T,phif.T,phic.T)).T
 
-        phi = np.vstack((phie.T,phif.T,phic.T)).T
-
-        return phi[..., None, :] #(..., 1, ldof)
+       # print(phi[..., None, :].shape) #(1, ldof) or (NQ, 1, ldof)
+        return phi[..., None, :] 
 
     @barycentric
     def grad_basis(self, bc, index=np.s_[:]):
@@ -129,17 +132,16 @@ class CRFortin3DFiniteElementSpace():
         Parameters
         ----------
         bc : numpy.ndarray
-            the shape of `bc` can be `(NQ, TD+1)`
+            the shape of `bc` can be (TD+1, ) or `(NQ, TD+1)`
 
         Returns
         -------
         gphi : numpy.ndarray
-            the shape of `gphi` can b `(NC, ldof, GD)' or
+            the shape of `gphi` can be `(NC, ldof, GD)' or
             `(NQ, NC, ldof, GD)'
         """
         mesh = self.mesh
         grad_lambda = mesh.grad_lambda()[index] #(NC, TD+1, GD)
-        print(grad_lambda.shape, len(bc.shape), bc)
         gphie = 4*(bc[...,None,[0,0,0,1,1,2],None]*grad_lambda[...,[1,2,3,2,3,3],:]
                     +bc[...,None,[1,2,3,2,3,3],None]*grad_lambda[...,[0,0,0,1,1,2],:])
         gphif = 4*(bc[...,None,:,None]-1)*grad_lambda - 6*(bc[...,None,[1,2,3,0],None]*grad_lambda[...,[1,2,3,0],:]
@@ -153,21 +155,56 @@ class CRFortin3DFiniteElementSpace():
         NC = grad_lambda.shape[0]
         ldof = self.number_of_local_dofs()
         GD = self.geo_dimension()
-        shape = (NQ,NC,ldof,GD)
+        if len(bc.shape) == 1:
+            shape = (NC, ldof, GD)
+        else:
+            shape = (NQ,NC,ldof,GD)
         
         gphi = np.empty(shape)
 
         gphi[...,0:6,:] = gphie
         gphi[...,6:10,:] = gphif
         gphi[...,10:11,:] = gphic 
-        print(gphie.shape,gphif.shape,gphic.shape,gphi.shape)
-        '''
-        if len(bc.shape) == 1:
-            gphie = np.einsum('i, jil->jil',4*bc[[0,0,0,1,1,2]],grad_lambda[...,[1,2,3,2,3,3],:])+np.einsum('i, jil->jil',4*bc[[1,2,3,2,3,3]],grad_lambda[...,[0,0,0,1,1,2],:])
-        else:
-            gphie = np.einsum('mi, jil->mjil',4*bc[...,[0,0,0,1,1,2]],grad_lambda[...,[1,2,3,2,3,3],:])+np.einsum('i, jil->jil',4*bc[...,[1,2,3,2,3,3]],grad_lambda[...,[0,0,0,1,1,2],:])
-        '''
+       # print(gphi.shape) #(NC, ldof, GD) or (NQ, NC, ldof, GD)
         return gphi
+
+    @barycentric
+    def value(self, uh, bc, index=np.s_[:]):
+        phi = self.basis(bc) #phi.shape = (1,ldof) or (NQ,1,ldof)
+        cell2dof = self.cell_to_dof()
+        dim = len(uh.shape) - 1 #uh.shape = (gdof,) or 
+        s0 = 'abcdefg'
+        s1 = '...ij, ij{}->...i{}'.format(s0[:dim], s0[:dim])
+        val = np.einsum(s1, phi, uh[cell2dof[index]])
+        return val
+
+    @barycentric
+    def grad_value(self, uh, bc, index=np.s_[:]):
+        gphi = self.grad_basis(bc, index=index) #(NC, ldof, GD) or (NQ, NC, ldof, GD)
+        cell2dof = self.cell_to_dof()
+        dim = len(uh.shape) - 1
+        s0 = 'abcdefg'
+        s1 = '...ijm, ij{}->...i{}m'.format(s0[:dim], s0[:dim])
+        val = np.einsum(s1, gphi, uh[cell2dof[index]])
+        return val
+
+    def stiff_matrix(self, c=None):
+        gdof = self.number_of_global_dofs()
+        cell2dof = self.cell_to_dof()
+        b0 = (self.grad_basis, cell2dof, gdof)
+        q = 2 #gphi is pisecise linear
+        A = self.integralalg.serial_construct_matrix(b0, c=c, q=q)
+        return A
+
+    def source_vector(self, f, dim=None, q=None):
+        gdof = self.number_of_global_dofs()
+        cell2dof = self.cell_to_dof()
+        b0 = (self.basis, cell2dof, gdof)
+        if q is None:
+            q = 3
+
+        b = self.integralalg.serial_construct_vector(f, b0, q=q)
+        return q
 
 
 
@@ -181,25 +218,60 @@ class CRFortin3DFiniteElementSpace():
 if __name__ == '__main__':
     from fealpy.mesh import MeshFactory
     import matplotlib.pyplot as plt
+    import sympy as sp
     from mpl_toolkits.mplot3d import Axes3D
+    from pde_model2 import generalelliptic3D
 
+    #load mesh
     mf = MeshFactory()
     mesh = mf.boxmesh3d([0,1,0,1,0,1], nx=2,ny=2,nz=2,meshtype='tet')
     #mesh = mf.one_tetrahedron_mesh()
+
+    #load space
     space = CRFortin3DFiniteElementSpace(mesh)
+
+    #check the dof and interpolation point
     dof = CR_FortinDof(mesh)
     ipoints = dof.interpolation_points()
     cell2dof = dof.cell_to_dof()
-    qf = mesh.integrator(2, 'cell')
-    bcs, ws = qf.get_quadrature_points_and_weights()
 
+    #check the phi and gphi
+    qf = mesh.integrator(4, 'cell')
+    bcs, ws = qf.get_quadrature_points_and_weights()
+    bcs = np.array([1.0,0.0,0.0,0.0],dtype=mesh.ftype)
     phi = space.basis(bcs)
     gphi = space.grad_basis(bcs)
-    print(cell2dof.shape, phi.shape, gphi.shape)
+    grad_lambda = mesh.grad_lambda()
+    '''
+    np.set_printoptions(precision=3)
+
+    print('bc = ', bcs.squeeze(), 
+        '\n phi = ', phi.squeeze(),
+        '\n gphi = ', gphi.squeeze(),
+        '\n grad_lambda = \n', grad_lambda.squeeze())
+
+    '''
+    #print(cell2dof.shape, phi.shape, gphi.shape)
+
+    #check the value and grad_value
+    gdof = space.number_of_global_dofs()
+    uh = np.random.random((gdof,2))
+    uhs = space.value(uh,bcs)
+    guhs = space.grad_value(uh,bcs)
+
+   # print(bcs.shape,cell2dof.shape,uh.shape,uhs.shape,guhs.shape)
     
+    ''' stiff matrix '''
+    x, y, z = sp.symbols('x0,x1,x2')
+    u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
 
+    pde = generalelliptic3D(u,x,y,z,
+          Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
 
+    A = space.stiff_matrix()
+    F = space.source_vector(pde.source)
 
+    print(F)
 '''    
     node = mesh.entity('node')
     cell = mesh.entity('cell')
