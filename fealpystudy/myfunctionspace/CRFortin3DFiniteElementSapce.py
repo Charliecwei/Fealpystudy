@@ -197,14 +197,56 @@ class CRFortin3DFiniteElementSpace():
         return A
 
     def source_vector(self, f, dim=None, q=None):
-        gdof = self.number_of_global_dofs()
-        cell2dof = self.cell_to_dof()
-        b0 = (self.basis, cell2dof, gdof)
-        if q is None:
-            q = 3
+        cellmeasure = self.cellmeasure
+        bcs, ws = self.integrator.get_quadrature_points_and_weights()
 
-        b = self.integralalg.serial_construct_vector(f, b0, q=q)
-        return q
+        if f.coordtype == 'cartesian':
+            pp = self.mesh.bc_to_point(bcs)
+            fval = f(pp)
+        elif f.coordtype == 'barycentric':
+            fval = f(bcs)
+
+       
+
+        godf = self.number_of_global_dofs()
+        shape = gdof if dim is None else (gdof, dim)
+        b = np.zeros(shape, dtype=self.ftype)
+
+        if type(fval) in {float, int}:
+            if favl == 0.0:
+                return b
+            else:
+                phi = self.basis(bcs)
+                bb = np.einsum('i, ijm, j->jm...',
+                        ws, phi, self.cellmeasure)
+                bb *=fval
+        else:
+            phi = self.basis(bcs)
+            bb = bb = np.einsum('i, ij..., ijm, j->jm...',
+                        ws, fval, phi, self.cellmeasure)
+        cell2dof = self.cell_to_dof()
+        if dim is None:
+            np.add.at(b, cell2dof, bb)
+        else:
+            np.add.at(b, (cell2dof, np.s_[:]), bb)
+
+        return b
+
+    def function(self, dim=None, array=None):
+        f = Function(self, dim=dim, array=array, coordtype='barycentric')
+        return f
+
+    def array(self, dim=None):
+        gdof = self.number_of_global_dofs()
+        if dim in {None, 1}:
+            shape = gdof
+        elif type(dim) is int:
+            shape = (gdof, dim)
+        elif type(dim) is tuple:
+            shape = (gdof, ) + dim
+        return np.zeros(shape, dtype=self.ftype)
+        
+
 
 
 
@@ -270,8 +312,30 @@ if __name__ == '__main__':
 
     A = space.stiff_matrix()
     F = space.source_vector(pde.source)
+    uh = space.function()
 
-    print(F)
+    print(uh.shape)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 '''    
     node = mesh.entity('node')
     cell = mesh.entity('cell')
