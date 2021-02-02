@@ -41,8 +41,24 @@ class CR_FortinDof():
         cell2dof = np.vstack((mesh.ds.cell_to_edge().T,NE+mesh.ds.cell_to_face().T,NE+NF+np.arange(0,NC))).T 
         # cell2dof.shape = (NC,ldof), ldof = LNE+LNF+LNC
 
-        return cell2dof[index] 
+        return cell2dof[index]
 
+    def face_to_dof(self, index=np.s_[:]):
+        mesh = self.mesh 
+        NE = mesh.number_of_edges()
+        NF = mesh.number_of_faces()
+        face2dof = np.vstack((mesh.ds.face_to_edge().T,NE+np.arange(0,NF))).T
+
+        return face2dof[index]
+
+    def edge_to_dof(self, index=np.s_[:]):
+        mesh = self.mesh
+        NE = mesh.number_of_edges()
+        edge2dof = np.arange(0,NE)
+
+        return edge2dof
+
+        
     def interpolation_points(self):
         mesh = self.mesh
         '''
@@ -61,6 +77,38 @@ class CR_FortinDof():
         ipoints = np.vstack((mesh.entity_barycenter('edge'),mesh.entity_barycenter('face'),mesh.entity_barycenter('cell')))
         # ipoints.shape = (gof,GD)
         return ipoints
+
+    def number_of_global_dofs(self):
+        return self.mesh.number_of_edges()+self.mesh.number_of_faces()+self.mesh.number_of_cells()
+
+    def number_of_local_dofs(self, doftype='cell'):
+        if doftype in {'cell'}:
+            return 11
+        elif doftype in {'face'}:
+            return 4
+        elif doftype in {'edge'}:
+            return 1
+        elif doftype in {'node'}:
+            return 0
+
+
+    def is_boundary_dof(self, threshold=None):
+        if type(threshold) is np.ndarray:
+            index = threshold
+        else:
+            index = self.mesh.ds.boundary_face_index()
+            if callable(threshold):
+                bc = self.mesh.entity_barycenter('face', index=index)
+                flag = threshold(bc)
+                index = index[flag]
+
+        gdof = self.number_of_global_dofs()
+        face2dof = self.face_to_dof()
+        #print(face2dof.shape)
+        isBdDof = np.zeros(gdof,dtype=np.bool)
+        isBdDof[np.unique(face2dof[index,:].ravel())] = True
+
+        return isBdDof
 
 class CRFortin3DFiniteElementSpace():
     def __init__(self, mesh, q=None):
@@ -91,6 +139,18 @@ class CRFortin3DFiniteElementSpace():
 
     def cell_to_dof(self, index=np.s_[:]):
         return self.dof.cell_to_dof(index=index)
+
+    def cell_to_dof(self, index=np.s_[:]):
+        return self.dof.cell_to_dof(index=index)
+
+    def face_to_dof(self, index=np.s_[:]):
+        return self.dof.face_to_dof(index=index)
+
+    def edge_to_dof(self, index=np.s_[:]):
+        return self.dof.edge_to_dof(index=index)
+
+    def is_boundary_dof(self, threshold=None):
+        return self.dof.is_boundary_dof(threshold=threshold)
 
     def geo_dimension(self):
         return self.GD
@@ -245,6 +305,12 @@ class CRFortin3DFiniteElementSpace():
         elif type(dim) is tuple:
             shape = (gdof, ) + dim
         return np.zeros(shape, dtype=self.ftype)
+
+    def set_dirichlet_bc(self, uh, g, threshold=None):
+        ipoints = self.interpolation_points()
+        isBdDof = self.is_boundary_dof(threshold=threshold)
+        uh[isBdDof] = g(ipoints[isBdDof])
+        return isBdDof
         
 
 
@@ -263,6 +329,8 @@ if __name__ == '__main__':
     import sympy as sp
     from mpl_toolkits.mplot3d import Axes3D
     from pde_model2 import generalelliptic3D
+    import fealpy.boundarycondition as bdc
+    from scipy.sparse.linalg import spsolve
 
     #load mesh
     mf = MeshFactory()
@@ -314,9 +382,13 @@ if __name__ == '__main__':
     F = space.source_vector(pde.source)
     uh = space.function()
 
-    print(uh.shape)
+    bc = bdc.DirichletBC(space, pde.dirichlet, threshold=pde.is_dirichlet_boundary)
+    A, F = bc.apply(A,F,uh)
+
+    uh[:] = spsolve(A, F)
 
 
+ 
 
 
 
