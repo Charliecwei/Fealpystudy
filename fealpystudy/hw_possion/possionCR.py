@@ -72,8 +72,10 @@ for i in range(4):
 
     uh[:] = spsolve(A, F)
 
+    uI = space.interpolation(pde.solution)
 
-    errormatrix[0, i] = space.integralalg.L2_error(pde.solution, uh.value)
+
+    errormatrix[0, i] = space.integralalg.L2_error(pde.solution, uh)
     errormatrix[1, i] = space.integralalg.L2_error(pde.gradient, uh.grad_value)
 
     if i < 3:

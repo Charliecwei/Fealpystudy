@@ -268,7 +268,7 @@ class CRFortin3DFiniteElementSpace():
 
        
 
-        godf = self.number_of_global_dofs()
+        gdof = self.number_of_global_dofs()
         shape = gdof if dim is None else (gdof, dim)
         b = np.zeros(shape, dtype=self.ftype)
 
@@ -291,6 +291,11 @@ class CRFortin3DFiniteElementSpace():
             np.add.at(b, (cell2dof, np.s_[:]), bb)
 
         return b
+
+    def interpolation(self, u, dim=None):
+        ipoints = self.dof.interpolation_points()
+        uI = u(ipoints)
+        return self.function(dim=dim, array=uI)
 
     def function(self, dim=None, array=None):
         f = Function(self, dim=dim, array=array, coordtype='barycentric')
@@ -331,15 +336,59 @@ if __name__ == '__main__':
     from pde_model2 import generalelliptic3D
     import fealpy.boundarycondition as bdc
     from scipy.sparse.linalg import spsolve
+    from fealpy.tools.show import showmultirate, show_error_table
+
+    #general pde model
+    x, y, z = sp.symbols('x0,x1,x2')
+    #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
+    u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
+
+    pde = generalelliptic3D(u,x,y,z,
+          Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
 
     #load mesh
+    domain = pde.domain()
     mf = MeshFactory()
-    mesh = mf.boxmesh3d([0,1,0,1,0,1], nx=2,ny=2,nz=2,meshtype='tet')
+    mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
     #mesh = mf.one_tetrahedron_mesh()
 
-    #load space
-    space = CRFortin3DFiniteElementSpace(mesh)
+    NDof = np.zeros(4, dtype=mesh.itype)
+    errormatrix = np.zeros((2,4),dtype = mesh.ftype)
+    errortype = ['$||u-u_h||_0$', '$||\\nabla u-\\nabla u_h||_0$']
 
+    for i in range(4):
+        print('Step:', i)
+        space = CRFortin3DFiniteElementSpace(mesh)
+
+        NDof[i] = space.number_of_global_dofs()
+        uh = space.function()
+        A = space.stiff_matrix()
+        F = space.source_vector(pde.source)
+
+        bc = bdc.DirichletBC(space, pde.dirichlet, threshold=pde.is_dirichlet_boundary)
+        A, F = bc.apply(A,F,uh)
+
+        uh[:] = spsolve(A, F)
+
+        #插值误差
+        uI = space.interpolation(pde.solution) #插值点给法有问题
+
+        errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uh.value)
+        errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uh.grad_value)
+
+        if i<3:
+            mesh.uniform_refine()
+
+    k = 0
+    showmultirate(plt, k, NDof, errormatrix, errortype, propsize=20)
+    show_error_table(NDof, errortype,  errormatrix)
+
+    #plt.show()
+
+
+
+
+    '''
     #check the dof and interpolation point
     dof = CR_FortinDof(mesh)
     ipoints = dof.interpolation_points()
@@ -352,7 +401,7 @@ if __name__ == '__main__':
     phi = space.basis(bcs)
     gphi = space.grad_basis(bcs)
     grad_lambda = mesh.grad_lambda()
-    '''
+
     np.set_printoptions(precision=3)
 
     print('bc = ', bcs.squeeze(), 
@@ -360,7 +409,7 @@ if __name__ == '__main__':
         '\n gphi = ', gphi.squeeze(),
         '\n grad_lambda = \n', grad_lambda.squeeze())
 
-    '''
+ 
     #print(cell2dof.shape, phi.shape, gphi.shape)
 
     #check the value and grad_value
@@ -370,22 +419,7 @@ if __name__ == '__main__':
     guhs = space.grad_value(uh,bcs)
 
    # print(bcs.shape,cell2dof.shape,uh.shape,uhs.shape,guhs.shape)
-    
-    ''' stiff matrix '''
-    x, y, z = sp.symbols('x0,x1,x2')
-    u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
-
-    pde = generalelliptic3D(u,x,y,z,
-          Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
-
-    A = space.stiff_matrix()
-    F = space.source_vector(pde.source)
-    uh = space.function()
-
-    bc = bdc.DirichletBC(space, pde.dirichlet, threshold=pde.is_dirichlet_boundary)
-    A, F = bc.apply(A,F,uh)
-
-    uh[:] = spsolve(A, F)
+    '''
 
 
  
