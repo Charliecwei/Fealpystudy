@@ -3,7 +3,6 @@ from scipy.sparse import csr_matrix, spdiags, bmat
 
 from fealpy.decorator import barycentric
 from fealpy.quadrature import FEMeshIntegralAlg
-
 from fealpy.functionspace.Function import Function
 
 
@@ -25,21 +24,11 @@ class CR_FortinDof():
         NE = mesh.number_of_edges()
         NF = mesh.number_of_faces()
         NC = mesh.number_of_cells()
-        ''' 
-        lNE = mesh.ds.cell_to_edge().shape[-1]
-        lNF = mesh.ds.cell_to_face().shape[-1]
-        lNC = 1
-
-        shape = (NC,lNE+lNF+lNC)
-        cell2dof = np.empty(shape,dtype=self.itype) #(NC, lNE+lNF+lNC)
-
-        cell2dof[:,0:lNE] = mesh.ds.cell_to_edge()
-        cell2dof[:,lNE:lNE+lNF] = NE + mesh.ds.cell_to_face()
-        cell2dof[:,-1] = NE +NF + np.arange(0,NC)
-        '''
-
-        cell2dof = np.vstack((mesh.ds.cell_to_edge().T,NE+mesh.ds.cell_to_face().T,NE+NF+np.arange(0,NC))).T 
-        # cell2dof.shape = (NC,ldof), ldof = LNE+LNF+LNC
+        
+        cell2dof = np.vstack((mesh.ds.cell_to_edge().T,
+                              NE+mesh.ds.cell_to_face().T,
+                                    NE+NF+np.arange(0,NC))).T 
+        # cell2dof.shape = (NC,ldof), ldof = 11
 
         return cell2dof[index]
 
@@ -47,7 +36,9 @@ class CR_FortinDof():
         mesh = self.mesh 
         NE = mesh.number_of_edges()
         NF = mesh.number_of_faces()
-        face2dof = np.vstack((mesh.ds.face_to_edge().T,NE+np.arange(0,NF))).T
+        face2dof = np.vstack((mesh.ds.face_to_edge().T,
+                                    NE+np.arange(0,NF))).T
+        # face2dof.shape = (NF, 4)
 
         return face2dof[index]
 
@@ -55,27 +46,17 @@ class CR_FortinDof():
         mesh = self.mesh
         NE = mesh.number_of_edges()
         edge2dof = np.arange(0,NE)
+        # edge2dof.shape = (NE, )
 
         return edge2dof
 
         
     def interpolation_points(self):
         mesh = self.mesh
-        '''
-        TNE = mesh.entity_barycenter('edge').shape[0]
-        TNF = mesh.entity_barycenter('face').shape[0]
-        TNC = mesh.entity_barycenter('cell').shape[0]
-        GD = mesh.top_dimension()
-        shape = (TNE+TNF+TNC,GD)  
-        ipoints = np.empty(shape,self.ftype)
-        
-        ipoints[0:TNE,:] = mesh.entity_barycenter('edge') 
-        ipoints[TNE:TNE+TNF,:] = mesh.entity_barycenter('face')
-        ipoints[TNE+TNF:,:] = mesh.entity_barycenter('cell')  #(gdof,GD)
-        '''
-
-        ipoints = np.vstack((mesh.entity_barycenter('edge'),mesh.entity_barycenter('face'),mesh.entity_barycenter('cell')))
-        # ipoints.shape = (gof,GD)
+        ipoints = np.vstack((mesh.entity_barycenter('edge'),
+                                mesh.entity_barycenter('face'),
+                                    mesh.entity_barycenter('cell')))
+        # ipoints.shape = (gdof,3)
         return ipoints
 
     def number_of_global_dofs(self):
