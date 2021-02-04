@@ -59,6 +59,14 @@ class CR_FortinDof():
         # ipoints.shape = (gdof,3)
         return ipoints
 
+    def newinterpolation_points(self):
+        mesh = self.mesh
+        ipoints = np.vstack((mesh.entity_barycenter('edge'),
+                                mesh.entity('node')))
+        # ipoints.shape = (NE+NN, 3)
+        return ipoints
+
+
     def number_of_global_dofs(self):
         return self.mesh.number_of_edges()+self.mesh.number_of_faces()+self.mesh.number_of_cells()
 
@@ -118,6 +126,9 @@ class CRFortin3DFiniteElementSpace():
     def interpolation_points(self):
         return self.dof.interpolation_points()
 
+    def newinterpolation_points(self):
+        return self.dof.newinterpolation_points()
+
     def cell_to_dof(self, index=np.s_[:]):
         return self.dof.cell_to_dof(index=index)
 
@@ -155,7 +166,10 @@ class CRFortin3DFiniteElementSpace():
             the shape of 'phi' can be `(1, ldof)` or `(NQ, 1, ldof)`
         """
         phie = 4*bc[...,[0,0,0,1,1,2]]*bc[...,[1,2,3,2,3,3]] #(NQ,6)
+        '''
         phif = 2*(1-bc)**2-3*(bc[...,[1,2,3,0]]**2+bc[...,[2,3,0,1]]**2+bc[...,[3,0,1,2]]**2) #(NQ,4)
+        '''
+        phif = 10*bc**2 - 8*bc + 1 #(NQ, 4)
         phic = 2-4*np.sum(bc**2,-1) #(NQ,1)
         if len(bc.shape)==1:
             phi = np.concatenate([phie,phif,[phic]])
@@ -185,9 +199,13 @@ class CRFortin3DFiniteElementSpace():
         grad_lambda = mesh.grad_lambda()[index] #(NC, TD+1, GD)
         gphie = 4*(bc[...,None,[0,0,0,1,1,2],None]*grad_lambda[...,[1,2,3,2,3,3],:]
                     +bc[...,None,[1,2,3,2,3,3],None]*grad_lambda[...,[0,0,0,1,1,2],:])
+        '''
         gphif = 4*(bc[...,None,:,None]-1)*grad_lambda - 6*(bc[...,None,[1,2,3,0],None]*grad_lambda[...,[1,2,3,0],:]
                                 + bc[...,None,[2,3,0,1],None]*grad_lambda[...,[2,3,0,1],:]
                                 +bc[...,None,[3,0,1,2],None]*grad_lambda[...,[3,0,1,2],:])
+        '''
+        gphif = 20*bc[...,None,:,None]*grad_lambda - 8*grad_lambda
+
         gphic = -8*np.sum(bc[...,None,:,None]*grad_lambda,-2)
         gphic = gphic[...,None,:]
 
@@ -278,6 +296,13 @@ class CRFortin3DFiniteElementSpace():
         uI = u(ipoints)
         return self.function(dim=dim, array=uI)
 
+    def newinterpolation_points(self, u, dim=None):
+        ipoints = self.dof.interpolation_points()
+        uo = u(ipoints)
+        NE = self.mesh.number_of_edges()
+        return 'need change '
+        
+
     def function(self, dim=None, array=None):
         f = Function(self, dim=dim, array=array, coordtype='barycentric')
         return f
@@ -321,8 +346,8 @@ if __name__ == '__main__':
 
     #general pde model
     x, y, z = sp.symbols('x0,x1,x2')
-    #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
-    u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
+    u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
+    #u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
 
     pde = generalelliptic3D(u,x,y,z,
           Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
@@ -337,9 +362,12 @@ if __name__ == '__main__':
     errormatrix = np.zeros((2,4),dtype = mesh.ftype)
     errortype = ['$||u-u_h||_0$', '$||\\nabla u-\\nabla u_h||_0$']
 
+
     for i in range(4):
         print('Step:', i)
         space = CRFortin3DFiniteElementSpace(mesh)
+
+        #print(space.newinterpolation_points().shape, mesh.number_of_edges()+mesh.number_of_nodes())
 
         NDof[i] = space.number_of_global_dofs()
         uh = space.function()
