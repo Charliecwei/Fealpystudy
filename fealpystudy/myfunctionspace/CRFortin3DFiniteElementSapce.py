@@ -299,8 +299,25 @@ class CRFortin3DFiniteElementSpace():
     def newinterpolation_points(self, u, dim=None):
         ipoints = self.dof.interpolation_points()
         uo = u(ipoints)
-        NE = self.mesh.number_of_edges()
-        return 'need change '
+        mesh = self.mesh
+
+        NE = mesh.number_of_edges()
+        NF = mesh.number_of_faces()
+        NC = mesh.number_of_cells()
+
+        uE = uo[:NE][mesh.ds.cell_to_edge()] #(NC,6)
+        uN = uo[NE:][mesh.entity('cell')]    #(NC,4)
+
+        uE = uE + 0.25*(uN[:,[0,0,0,1,1,2]]+uN[:,[1,2,3,2,3,3]])-0.5*(uN[:,[2,1,1,0,0,0]]+uN[:,[3,3,2,3,2,1]]) #(NC,6)
+        uF = 0.5*uN #(NC,4)
+        uC = 0.25*np.sum(uN,-1) #(NC,1)
+
+        uI = np.zeros(NE+NF+NC, dtype=self.ftype)
+        cell2dof = self.cell_to_dof()
+        np.add.at(uI, cell2dof, np.vstack((uE.T,uF.T,uC.T)).T)
+        #print(uI.shape)
+   
+        return self.function(dim=dim, array=uI)
         
 
     def function(self, dim=None, array=None):
@@ -346,8 +363,9 @@ if __name__ == '__main__':
 
     #general pde model
     x, y, z = sp.symbols('x0,x1,x2')
-    u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
+    #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
     #u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
+    u = x
 
     pde = generalelliptic3D(u,x,y,z,
           Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
@@ -355,8 +373,8 @@ if __name__ == '__main__':
     #load mesh
     domain = pde.domain()
     mf = MeshFactory()
-    mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
-    #mesh = mf.one_tetrahedron_mesh()
+    #mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
+    mesh = mf.one_tetrahedron_mesh()
 
     NDof = np.zeros(4, dtype=mesh.itype)
     errormatrix = np.zeros((2,4),dtype = mesh.ftype)
@@ -370,6 +388,7 @@ if __name__ == '__main__':
         #print(space.newinterpolation_points().shape, mesh.number_of_edges()+mesh.number_of_nodes())
 
         NDof[i] = space.number_of_global_dofs()
+        '''
         uh = space.function()
         A = space.stiff_matrix()
         F = space.source_vector(pde.source)
@@ -377,13 +396,15 @@ if __name__ == '__main__':
         bc = bdc.DirichletBC(space, pde.dirichlet, threshold=pde.is_dirichlet_boundary)
         A, F = bc.apply(A,F,uh)
 
-        uh[:] = spsolve(A, F)
+        #uh[:] = spsolve(A, F)
+        '''
 
         #插值误差
-        uI = space.interpolation(pde.solution) #插值点给法有问题
+        #uI = space.interpolation(pde.solution) #插值点给法有问题
+        uI = space.newinterpolation_points(pde.solution) #重构P2插值不行, 也可能是程序没对！！！
 
-        errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uh.value)
-        errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uh.grad_value)
+        errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uI.value)
+        errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uI.grad_value)
 
         if i<3:
             mesh.uniform_refine()
