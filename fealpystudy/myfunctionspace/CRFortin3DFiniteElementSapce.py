@@ -339,8 +339,63 @@ class CRFortin3DFiniteElementSpace():
 
     def set_dirichlet_bc(self, uh, g, threshold=None):
         ipoints = self.interpolation_points()
-        isBdDof = self.is_boundary_dof(threshold=threshold)
-        uh[isBdDof] = g(ipoints[isBdDof])
+        isBdDof = self.is_boundary_dof(threshold=threshold)  
+        mesh = self.mesh  
+
+        #uh[isBdDof] = g(ipoints[isBdDof])    need to do some work
+        #idex = np.where(isBdDof)
+        #uh[idex[0]] = 0
+
+        # to get I_hu, such that \int_F (I_hu-u)p d\sigma=0 , p\in P_1(F)
+        # where F is boundary face
+
+        face2dof = self.face_to_dof() #(NF, 4)
+        face = mesh.entity('face') #(NF, 3)
+        node = mesh.entity('node') #(NE. 3)
+        NE = mesh.number_of_edges()
+
+        index = mesh.ds.boundary_face_index()
+        bc = mesh.entity_barycenter('face', index=index)
+        flag = threshold(bc)
+        index = index[flag]
+
+        bdface2dof = face2dof[index,:] #(bdNF, 4)
+        bdface = face[index,:]
+        gdof = self.number_of_global_dofs()
+        bdNF = index.shape[0]
+        Abd = np.array([
+            [2.0, 2.0, 1.0, 5.0],
+            [2.0, 1.0, 2.0, 5.0],
+            [1.0, 2.0, 2.0, 5.0]], dtype=self.ftype)
+
+        faceinter = mesh.integrator(3,'face')
+        bcs, ws = faceinter.get_quadrature_points_and_weights() #bcs (NQ, 3)
+        
+        bc = np.einsum('ijk,lij->lik', node[bdface,...],bcs[...,None,:]) #(NQ,bdNF,3)
+        uo = g(bc) #(NQ,bdNF)
+        b = uo[...,None]*bcs[...,None,:] #(NQ,bdNF,3)
+        bb = np.einsum('i,ijk->jk',ws,b) #(bdNF,3)
+        b = 15*np.ravel(bb,order='F')
+        I = np.arange(3*bdNF,dtype=self.itype).reshape(3,bdNF)
+        
+        shape = (3, bdNF, 4)
+        J = np.broadcast_to(bdface2dof[None,:,:],shape = shape)
+        Abd = np.broadcast_to(Abd[:,None,:],shape = shape)
+        I = np.broadcast_to(I[:,:,None],shape = shape)
+
+        Abd = csr_matrix((Abd.flat, (I.flat, J.flat)), shape=(3*bdNF, gdof)).todense()
+        Abd = Abd[:,isBdDof]
+        bdgdof = Abd.shape[1]
+        idex = np.array(np.where(isBdDof)).squeeze()
+        #uh[idex[1:]] = spsolve(Abd[1:bdgdof,1:bdgdof],b[1:bdgdof])
+        
+
+    
+
+        #print(uh[idex[1:]].shape, spsolve(Abd[1:bdgdof,1:bdgdof],b[1:bdgdof]).shape)
+
+        
+
         return isBdDof
         
 
@@ -369,17 +424,19 @@ if __name__ == '__main__':
     #general pde model
     x, y, z = sp.symbols('x0,x1,x2')
     #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
-    #u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
-    u = 1-x-y-z
+    u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
+    #u = 1-x-y-z
 
     pde = generalelliptic3D(u,x,y,z,
           Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
 
     #load mesh
-    #domain = pde.domain()
-    #mf = MeshFactory()
-    #mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
+    domain = pde.domain()
+    mf = MeshFactory()
+    mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
     #mesh = mf.one_tetrahedron_mesh()
+
+    '''
     node = np.array([
                 [0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0],
@@ -407,9 +464,9 @@ if __name__ == '__main__':
             '\n LP2=',uILP2(bc).squeeze(),
             '\n CRFortoin=', uICRFortin(bc).squeeze())
 
-    
-
     '''
+
+  
 
     NDof = np.zeros(4, dtype=mesh.itype)
     errormatrix = np.zeros((2,4),dtype = mesh.ftype)
@@ -437,10 +494,10 @@ if __name__ == '__main__':
 
         #插值误差
         #uI = space.interpolation(pde.solution) #插值点给法有问题
-        uI = space.newinterpolation(pde.solution) #重构P2插值不行, 该插值点的值会通过面影响到其他单元，故不行
+        #uI = space.newinterpolation(pde.solution) #重构P2插值不行, 该插值点的值会通过面影响到其他单元，故不行
 
-        errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uI.value)
-        errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uI.grad_value)
+        errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uh.value)
+        errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uh.grad_value)
 
         if i<3:
             mesh.uniform_refine()
@@ -450,7 +507,7 @@ if __name__ == '__main__':
     show_error_table(NDof, errortype,  errormatrix)
 
     #plt.show()
-    '''
+
 
 
     '''
@@ -484,8 +541,8 @@ if __name__ == '__main__':
     guhs = space.grad_value(uh,bcs)
 
    # print(bcs.shape,cell2dof.shape,uh.shape,uhs.shape,guhs.shape)
-    '''
 
+    '''
 
  
 
@@ -500,7 +557,7 @@ if __name__ == '__main__':
 
 
 
-
+'''
 
 
 
@@ -534,3 +591,7 @@ if __name__ == '__main__':
     #mesh.find_node(axes, node=ipoints, showindex=True, color='r', fontsize=30)
     plt.show()
 
+'''
+
+
+#在要求边界P1投影为0下，只能解齐次dirichlet,非齐次的不能解, 因为边界投影自由度不够
