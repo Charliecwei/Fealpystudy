@@ -235,6 +235,7 @@ class CRFortin3DFiniteElementSpace():
         s0 = 'abcdefg'
         s1 = '...ij, ij{}->...i{}'.format(s0[:dim], s0[:dim])
         val = np.einsum(s1, phi, uh[cell2dof[index]])
+       # print(uh[cell2dof], '\n', cell2dof)
         return val
 
     @barycentric
@@ -296,9 +297,10 @@ class CRFortin3DFiniteElementSpace():
         uI = u(ipoints)
         return self.function(dim=dim, array=uI)
 
-    def newinterpolation_points(self, u, dim=None):
-        ipoints = self.dof.interpolation_points()
-        uo = u(ipoints)
+    def newinterpolation(self, u, dim=None):
+        ipoints = self.dof.newinterpolation_points() #(NE+NN,3)
+        uo = u(ipoints) #(NE+NN,)
+
         mesh = self.mesh
 
         NE = mesh.number_of_edges()
@@ -314,9 +316,10 @@ class CRFortin3DFiniteElementSpace():
 
         uI = np.zeros(NE+NF+NC, dtype=self.ftype)
         cell2dof = self.cell_to_dof()
-        np.add.at(uI, cell2dof, np.vstack((uE.T,uF.T,uC.T)).T)
+        np.add.at(uI, cell2dof, np.vstack((uE.T,uF.T,uC.T)).T) #(gdof,)
+       # print(self.mesh.entity('node'))
         #print(uI.shape)
-   
+        
         return self.function(dim=dim, array=uI)
         
 
@@ -353,6 +356,7 @@ class CRFortin3DFiniteElementSpace():
 ###################################################################
 if __name__ == '__main__':
     from fealpy.mesh import MeshFactory
+    from fealpy.mesh.TetrahedronMesh import TetrahedronMesh
     import matplotlib.pyplot as plt
     import sympy as sp
     from mpl_toolkits.mplot3d import Axes3D
@@ -360,21 +364,52 @@ if __name__ == '__main__':
     import fealpy.boundarycondition as bdc
     from scipy.sparse.linalg import spsolve
     from fealpy.tools.show import showmultirate, show_error_table
+    from fealpy.functionspace import LagrangeFiniteElementSpace
 
     #general pde model
     x, y, z = sp.symbols('x0,x1,x2')
     #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)
     #u = sp.sin(sp.pi*x)*sp.exp(x+y+z)*y*(1-y)*z*(1-z)
-    u = x
+    u = 1-x-y-z
 
     pde = generalelliptic3D(u,x,y,z,
           Dirichletbd='(x==1.0)|(x==0.0)|(y==0.0)|(y==1.0)|(z==0)|(z==1)')
 
     #load mesh
-    domain = pde.domain()
-    mf = MeshFactory()
+    #domain = pde.domain()
+    #mf = MeshFactory()
     #mesh = mf.boxmesh3d(domain, nx=1,ny=1,nz=1,meshtype='tet')
-    mesh = mf.one_tetrahedron_mesh()
+    #mesh = mf.one_tetrahedron_mesh()
+    node = np.array([
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, -1.0]], dtype=np.float64)
+    cell = np.array([
+                [0, 1, 2, 3],
+                [0, 1, 2, 4]], dtype=np.int_)
+    mesh = TetrahedronMesh(node, cell)
+    
+    spaceCRFortion = CRFortin3DFiniteElementSpace(mesh)
+    spaceLagrange = LagrangeFiniteElementSpace(mesh,p=2)
+   
+   
+    uICRFortin = spaceCRFortion.newinterpolation(pde.solution)
+    uILP2 = spaceLagrange.interpolation(pde.solution)
+    exactu = sp.lambdify((x,y,z),u,'numpy')
+
+    bc = np.array([1,0,0,0],dtype=mesh.ftype)
+    bcs = mesh.bc_to_point(bc)
+
+    print('interpoints=', bcs.squeeze(),
+            '\n exactu=', exactu(bcs[...,0],bcs[...,1],bcs[...,2]).squeeze(),
+            '\n LP2=',uILP2(bc).squeeze(),
+            '\n CRFortoin=', uICRFortin(bc).squeeze())
+
+    
+
+    '''
 
     NDof = np.zeros(4, dtype=mesh.itype)
     errormatrix = np.zeros((2,4),dtype = mesh.ftype)
@@ -386,9 +421,9 @@ if __name__ == '__main__':
         space = CRFortin3DFiniteElementSpace(mesh)
 
         #print(space.newinterpolation_points().shape, mesh.number_of_edges()+mesh.number_of_nodes())
-
+   
         NDof[i] = space.number_of_global_dofs()
-        '''
+       
         uh = space.function()
         A = space.stiff_matrix()
         F = space.source_vector(pde.source)
@@ -396,12 +431,13 @@ if __name__ == '__main__':
         bc = bdc.DirichletBC(space, pde.dirichlet, threshold=pde.is_dirichlet_boundary)
         A, F = bc.apply(A,F,uh)
 
-        #uh[:] = spsolve(A, F)
-        '''
+        uh[:] = spsolve(A, F)
+
+    
 
         #插值误差
         #uI = space.interpolation(pde.solution) #插值点给法有问题
-        uI = space.newinterpolation_points(pde.solution) #重构P2插值不行, 也可能是程序没对！！！
+        uI = space.newinterpolation(pde.solution) #重构P2插值不行, 该插值点的值会通过面影响到其他单元，故不行
 
         errormatrix[0, i] = space.integralalg.L2_error(pde.solution,  uI.value)
         errormatrix[1, i] = space.integralalg.L2_error(pde.gradient,  uI.grad_value)
@@ -414,8 +450,7 @@ if __name__ == '__main__':
     show_error_table(NDof, errortype,  errormatrix)
 
     #plt.show()
-
-
+    '''
 
 
     '''
@@ -472,7 +507,7 @@ if __name__ == '__main__':
 
 
 
-'''    
+   
     node = mesh.entity('node')
     cell = mesh.entity('cell')
     face = mesh.entity('face')
@@ -490,13 +525,12 @@ if __name__ == '__main__':
     mesh.add_plot(axes)
 
 
-    mesh.find_node(axes, showindex=True, color='b', fontsize=30)
+    #mesh.find_node(axes, showindex=True, color='b', fontsize=30)
     #mesh.find_edge(axes, showindex=True, color='g', fontsize=24)
     mesh.find_face(axes, showindex=True, fontsize=22)
     #mesh.find_cell(axes, showindex=True, fontsize=20)
+    ipoints = spaceCRFortion.interpolation_points()
+    mesh.find_node(axes, showindex=True, color='b', fontsize=2)
+    #mesh.find_node(axes, node=ipoints, showindex=True, color='r', fontsize=30)
+    plt.show()
 
-    mesh.find_node(axes, showindex=True, color='b', fontsize=30)
-    mesh.find_node(axes, node=ipoints, showindex=True, color='r', fontsize=24)
-    #plt.show()
-
-'''
