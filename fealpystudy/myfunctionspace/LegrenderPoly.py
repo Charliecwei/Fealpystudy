@@ -133,7 +133,8 @@ class Legrendrepoly:
 
 ###################################################################
 if __name__ == '__main__':
+    import sys
     import numpy as np
-    Leg = Legrendrepoly(d=2,n=3)
+    n = int(sys.argv[1])
+    Leg = Legrendrepoly(d=2,n=n)
     print(Leg.L_beta)
-  #  print(Leg.beta)

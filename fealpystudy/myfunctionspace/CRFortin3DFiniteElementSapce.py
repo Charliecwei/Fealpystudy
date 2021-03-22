@@ -220,13 +220,14 @@ class CRFortin3DFiniteElementSpace():
         grad_lambda = mesh.grad_lambda()[index] #(NC, TD+1, GD)
         gphie = 4*(bc[...,None,[0,0,0,1,1,2],None]*grad_lambda[...,[1,2,3,2,3,3],:]
                     +bc[...,None,[1,2,3,2,3,3],None]*grad_lambda[...,[0,0,0,1,1,2],:])
-
+        
         gphif = 4*(bc[...,None,:,None]-1)*grad_lambda - 6*(bc[...,None,[1,2,3,0],None]*grad_lambda[...,[1,2,3,0],:]
                                 + bc[...,None,[2,3,0,1],None]*grad_lambda[...,[2,3,0,1],:]
                                 +bc[...,None,[3,0,1,2],None]*grad_lambda[...,[3,0,1,2],:])
-        
-        #gphif = 20*bc[...,None,:,None]*grad_lambda - 8*grad_lambda
-        
+        '''
+        gphif = 20*bc[...,None,:,None]*grad_lambda - 8*grad_lambda
+        '''
+
         gphic = -8*np.sum(bc[...,None,:,None]*grad_lambda,-2)
         gphic = gphic[...,None,:]
 
@@ -323,6 +324,41 @@ class CRFortin3DFiniteElementSpace():
     def Forininterpolation(self, u, dim=None):
         uI = self.Forininterpolationarray(u,dim=dim)
         return self.function(dim=dim, array=uI)
+
+    def myinterpolation(self, u, dim=None):
+        uI = self.myinterpolationarray(u,dim=dim)
+        return self.function(dim=dim, array=uI)
+
+
+
+
+    def myinterpolationarray(self,u,dim=None,index=np.s_[:]):
+        ipoints = self.dof.Forininterpolation_points() #(NE+NN,3)
+        uo = u(ipoints) #(NE+NN,)
+
+        mesh = self.mesh
+
+        NE = mesh.number_of_edges()
+        NF = mesh.number_of_faces()
+        NC = mesh.number_of_cells()
+
+        uE = uo[:NE] #(NE,)     
+        uN = uo[NE:] #(NN,)
+
+        u_cell_node = uN[mesh.entity('cell')]    #(NC,4)
+        u_face_node = uN[mesh.entity('face')]    #(NF,3)
+        u_edge_node = uN[mesh.entity('edge')]    #(NE,2)
+
+        uE = uE + 0.75*np.sum(u_edge_node,-1) #(NE,)
+        uF = -0.5*np.sum(u_face_node,-1) #(NF,)
+        uC = -1.25*np.sum(u_cell_node,-1) #(NC,)
+
+        uI = np.hstack((uE,uF,uC))
+
+        return uI[index]
+
+
+
 
 
     def Forininterpolationarray(self,u,dim=None,index=np.s_[:]):
@@ -497,8 +533,8 @@ if __name__ == '__main__':
     #general pde model
     x, y, z = sp.symbols('x0,x1,x2')
     #u = sp.sin(sp.pi*x)*sp.sin(sp.pi*y)*sp.sin(sp.pi*z)-(2/sp.pi)**3
-    u = sp.sin(2*sp.pi*x)*sp.sin(2*sp.pi*y)*sp.sin(2*sp.pi*z)
-    #u = sp.sin(sp.pi*x)*sp.exp(x+y+z)
+    #u = sp.sin(2*sp.pi*x)*sp.sin(2*sp.pi*y)*sp.sin(2*sp.pi*z)
+    u = sp.sin(sp.pi*x)*sp.exp(x+y+z)
     #u = sp.cos(sp.pi*x)*sp.cos(sp.pi*y)*sp.cos(sp.pi*z)
     #u = (1-x-y-z)**5
     pde = generalelliptic3D(u,x,y,z,
