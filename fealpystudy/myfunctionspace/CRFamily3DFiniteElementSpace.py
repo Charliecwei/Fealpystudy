@@ -11,12 +11,13 @@ from fealpy.functionspace.LagrangeFiniteElementSpace import LagrangeFiniteElemen
 
 class CRFamily3DFiniteElementSpace():
     def __init__(self, mesh, p=3):
-        '只能q=3'
+        'p=1，2，3，4'
         self.mesh = mesh
         self.cellmeasure = mesh.entity_measure('cell')
         self.space = LagrangeFiniteElementSpace(mesh,p=p)
         self.TD = mesh.top_dimension()
         self.GD = mesh.geo_dimension()
+        self.p = p
 
         self.itype = mesh.itype
         self.ftype = mesh.ftype
@@ -36,19 +37,39 @@ class CRFamily3DFiniteElementSpace():
 
         idx, = np.nonzero(dofFlags[0]) # 局部顶点自由度的编号
 
-        cell2dof[:,idx] = mesh.ds.cell_to_face() #变为边
-        base1 = NF
-        base0 = NN
+        cell2dof[:,idx] = mesh.ds.cell_to_face() #变为面自由度编号
+
+
+
+        base1 = NF #新的起始编号
+        base0 = NN #原来起始编号
+        p = self.p
+        edof = p-1
+        fdof = (p-1)*(p-2)//2
+        tdof = (p-1)*(p-2)*(p-3)//6
+
 
         idx, = np.nonzero(dofFlags[1]) # 边内部自由度的编号
         cell2dof[:,idx] = c2d[:,idx] - base0 + base1
+        base0+=edof*NE
+        base1+=edof*NE
 
         idx, = np.nonzero(dofFlags[2]) # 面内部自由度编号
         cell2dof[:,idx] = c2d[:,idx] - base0 + base1
+        base0+=fdof*NF
+        base1+=fdof*NF
 
-        base1+=2*NE+NF
-        cell2dof[:,-1] = np.arange(NC,dtype='int')+base1
-        base1+=NC
+        idx, = np.nonzero(dofFlags[3]) # 体内部自由度编号
+        cell2dof[:,idx] = c2d[:,idx] - base0 + base1
+        base0+=tdof*NC
+        base1+=tdof*NC
+
+        #新加体内部不连续自由度
+        d_trivp = self.d_triv()
+        if d_trivp > 0:
+            cell2dof[:,-d_trivp:] = np.arange(NC*d_trivp,dtype='int').reshape(NC,d_trivp)+base1
+            base1+=NC*d_trivp
+        #print(base1,np.max(cell2dof))
         return cell2dof
 
 
@@ -58,10 +79,21 @@ class CRFamily3DFiniteElementSpace():
  
 
     def number_of_global_dofs(self):
-        return 2*self.mesh.number_of_edges()+2*self.mesh.number_of_faces()+self.mesh.number_of_cells()
-
+        NC = self.mesh.number_of_cells()
+        NF = self.mesh.number_of_faces()
+        NN = self.mesh.number_of_nodes()
+        return self.space.number_of_global_dofs()-NN+NF+self.d_triv()*NC
     def number_of_local_dofs(self):
-        return 21
+        return self.space.number_of_local_dofs()+self.d_triv()
+
+    def d_triv(self):
+        '新增加的体上的非协调bubble个数'
+        p = self.p
+        return p//2 - (p-1)//3
+    def d_refl(self):
+        '一个面上非协调bubble个数'
+        p = self.p
+        return (p+1)//3
 
     def dof_flags_1(self):
         """ 
@@ -100,14 +132,42 @@ class CRFamily3DFiniteElementSpace():
         return self.TD
 
     def BT_ncval(self):
-        BT_ncval = np.array([[-10/3,5/27,5/27,5/27,-20/27,0,0,-20/27,0,-20/27,5/3,5/9,5/9,5/9,0,5/9,5/3,5/9,5/9,5/3],
-                             [5/3,5/9,5/9,-20/27,5/9,0,0,5/9,0,5/27,5/3,5/9,-20/27,5/9,0,5/27,5/3,-20/27,5/27,-10/3],
-                             [5/3,5/9,-20/27,5/9,5/9,0,0,5/27,0,5/9,5/3,-20/27,5/9,5/27,0,5/9,-10/3,5/27,-20/27,5/3],
-                             [5/3,-20/27,5/9,5/9,5/27,0,0,5/9,0,5/9,-10/3,5/27,5/27,-20/27,0,-20/27,5/3,5/9,5/9,5/3]],dtype='float')
+        p =self.p
+        if p == 1:
+            BT_ncval = np.array([[-2,1,1,1],       
+                                 [1,-2,1,1],
+                                 [1,1,-2,1],
+                                 [1,1,1,-2]],dtype='float')
+        elif p == 2:
+            BT_ncval = np.array([[4/3,-1/2,-1/2,-1/2,-2/3,1,1,-2/3,1,-2/3],    
+                                 [-2/3,-1/2,1,1,4/3,-1/2,-1/2,-2/3,1,-2/3],
+                                 [-2/3,1,-1/2,1,-2/3,-1/2,1,4/3,-1/2,-2/3],
+                                 [-2/3,1,1,-1/2,-2/3,1,-1/2,-2/3,-1/2,4/3]],dtype='float')
+        elif p == 3:
+            BT_ncval = np.array([[-10/3,5/27,5/27,5/27,-20/27,0,0,-20/27,0,-20/27,5/3,5/9,5/9,5/9,0,5/9,5/3,5/9,5/9,5/3],
+                                 [5/3,-20/27,5/9,5/9,5/27,0,0,5/9,0,5/9,-10/3,5/27,5/27,-20/27,0,-20/27,5/3,5/9,5/9,5/3],
+                                 [5/3,5/9,-20/27,5/9,5/9,0,0,5/27,0,5/9,5/3,-20/27,5/9,5/27,0,5/9,-10/3,5/27,-20/27,5/3],
+                                 [5/3,5/9,5/9,-20/27,5/9,0,0,5/9,0,5/27,5/3,5/9,-20/27,5/9,0,5/27,5/3,-20/27,5/27,-10/3]],dtype='float')
+        elif p == 4:
+            BT_ncval = np.array([[8/3,-305/384,-305/384,-305/384,-5/24,65/192,65/192,-5/24,65/192,-5/24,-65/384,-65/384,-65/384,-65/384,0,-65/384,-65/384,-65/384,-65/384,-65/384,-4/3,185/192,185/192,5/12,0,5/12,185/192,0,0,185/192,-4/3,185/192,5/12,185/192,-4/3],
+                                 [-4/3,-65/384,185/192,185/192,-5/24,-65/384,-65/384,5/12,0,5/12,-305/384,65/192,65/192,-65/384,0,-65/384,185/192,0,0,185/192,8/3,-305/384,-305/384,-5/24,65/192,-5/24,-65/384,-65/384,-65/384,-65/384,-4/3,185/192,5/12,185/192,-4/3],
+                                 [-4/3,185/192,-65/384,185/192,5/12,-65/384,0,-5/24,-65/384,5/12,185/192,-65/384,0,65/192,0,0,-305/384,65/192,-65/384,185/192,-4/3,-65/384,185/192,-5/24,-65/384,5/12,-305/384,65/192,-65/384,185/192,8/3,-305/384,-5/24,-65/384,-4/3],
+                                 [-4/3,185/192,185/192,-65/384,5/12,0,-65/384,5/12,-65/384,-5/24,185/192,0,-65/384,0,0,65/192,185/192,-65/384,65/192,-305/384,-4/3,185/192,-65/384,5/12,-65/384,-5/24,185/192,-65/384,65/192,-305/384,-4/3,-65/384,-5/24,-305/384,8/3]],dtype='float')
         return BT_ncval
 
     def BK_ncval(self):
-        BK_ncval = np.array([2,-4/3,-4/3,-4/3,-4/3,8/9,8/9,-4/3,8/9,-4/3,2,-4/3,-4/3,-4/3,8/9,-4/3,2,-4/3,-4/3,2],dtype='float')
+        p = self.p
+        if p == 1:
+            BK_ncval = np.array([0,0,0,0],dtype='float')
+        elif p == 2:
+            BK_ncval = np.array([2,0,0,0,2,0,0,2,0,2],dtype='float')     
+        elif p == 3:
+            BK_ncval = np.array([2,-4/3,-4/3,-4/3,-4/3,8/9,8/9,-4/3,8/9,-4/3,2,-4/3,-4/3,-4/3,8/9,-4/3,2,-4/3,-4/3,2],dtype='float')
+        elif p == 4:
+            BK_ncval = np.array([2,1/32,1/32,1/32,1/2,1/32,1/32,1/2,1/32,1/2,1/32,1/32,1/32,1/32,0,1/32,1/32,1/32,1/32,1/32,2,1/32,1/32,1/2,1/32,1/2,1/32,1/32,1/32,1/32,2,1/32,1/2,1/32,2],dtype='float')
+        d_trivp = self.d_triv()
+        if d_trivp == 1:
+            BK_ncval = BK_ncval[...,None]
         return BK_ncval
 
     @barycentric
@@ -144,9 +204,11 @@ class CRFamily3DFiniteElementSpace():
         idx, = np.nonzero(dofFlags[2]) # 面内部自由度的编号
         phi[...,idx] = phi0[...,idx]
 
-        BK_ncval = self.BK_ncval()
-        phi[...,-1] = np.einsum('...j,j->...',phi0,BK_ncval)
-        
+        d_trivp = self.d_triv()
+        if d_trivp>0:
+            BK_ncval = self.BK_ncval()
+            phi[...,-d_trivp:] = np.einsum('...j,jl->...l',phi0,BK_ncval)
+            
         return phi
 
     @barycentric
@@ -184,8 +246,10 @@ class CRFamily3DFiniteElementSpace():
         idx, = np.nonzero(dofFlags[2]) # 面内部自由度的编号
         gphi[...,idx,:] = gphi0[...,idx,:]
 
-        BK_ncval = self.BK_ncval()
-        gphi[...,-1,:] = np.einsum('...jk,j->...k',gphi0,BK_ncval)
+        d_trivp = self.d_triv()
+        if d_trivp>0:
+            BK_ncval = self.BK_ncval()
+            gphi[...,-d_trivp:,:] = np.einsum('...jk,jl->...lk',gphi0,BK_ncval)
 
         return gphi
 
@@ -253,6 +317,39 @@ if __name__ == '__main__':
 
     
 
+
+    def Inf_Sup(mesh,uspace,pspace,q=5):
+        cellmeasure = mesh.entity_measure('cell')
+        integralalg = FEMeshIntegralAlg(
+                    mesh, q,
+                    cellmeasure=cellmeasure)
+        integrator = integralalg.integrator
+        bcs, ws = integrator.get_quadrature_points_and_weights()
+
+
+        uspace = VectorFiniteElementSpace(uspace)       
+        duphi = uspace.div_basis(bcs) #(NQ,1,uldof)
+        #uphi = uspace.basis(bcs)
+        pphi= pspace.basis(bcs) #(NQ,1,pldof)
+        #print(divubasis.shape,pbasis.shape,ubasis.shape)
+        uldof = uspace.number_of_local_dofs()
+        pldof = pspace.number_of_local_dofs()
+        B = np.einsum('i,ijk,ijm,j->jkm',ws, pphi,duphi,cellmeasure)
+        I = np.einsum('ij, k->ijk', pspace.cell_to_dof(), np.ones(uldof,dtype=int))
+        J = np.einsum('ij, k->ikj', uspace.cell_to_dof(), np.ones(pldof,dtype=int))
+
+        pgdof = pspace.number_of_global_dofs()
+        ugdof = uspace.number_of_global_dofs()
+        #print(ugdof,np.max(J))
+        B = csr_matrix((B.flat, (I.flat, J.flat)), shape=(pgdof, ugdof))
+        #print(B.shape)
+        U, D, V = scipy.sparse.linalg.svds(B,k=pgdof-1)
+        #print(D.shape,B.shape,pgdof)
+
+        return np.min(D)
+
+
+
     mf = MeshFactory()
 
     mesh = mf.one_tetrahedron_mesh()
@@ -270,86 +367,31 @@ if __name__ == '__main__':
 
 
 
-    N = 3
+    N = 4
     beta = np.zeros((N,3))
     
     for i in range(N):
 
-        q = 5
-        cellmeasure = mesh.entity_measure('cell')
-        integralalg = FEMeshIntegralAlg(
-                    mesh, q,
-                    cellmeasure=cellmeasure)
-        integrator = integralalg.integrator
-        bcs, ws = integrator.get_quadrature_points_and_weights()      
-
-
-        uspace = VectorFiniteElementSpace(LagrangeFiniteElementSpace(mesh,p=2))       
+        uspace = CRFamily3DFiniteElementSpace(mesh,p=2)
         pspace = LagrangeFiniteElementSpace(mesh,p=1,spacetype='D')
-        duphi = uspace.div_basis(bcs) #(NQ,1,uldof)
-        #uphi = uspace.basis(bcs)
-        pphi= pspace.basis(bcs) #(NQ,1,pldof)
-        #print(divubasis.shape,pbasis.shape,ubasis.shape)
-        uldof = uspace.number_of_local_dofs()
-        pldof = pspace.number_of_local_dofs()
-        B = np.einsum('i,ijk,ijm,j->jkm',ws, pphi,duphi,cellmeasure)
-        I = np.einsum('ij, k->ijk', pspace.cell_to_dof(), np.ones(uldof,dtype=int))
-        J = np.einsum('ij, k->ikj', uspace.cell_to_dof(), np.ones(pldof,dtype=int))
-
-        pgdof = pspace.number_of_global_dofs()
-        ugdof = uspace.number_of_global_dofs()
-        B = csr_matrix((B.flat, (I.flat, J.flat)), shape=(pgdof, ugdof))
-        #print(B.shape)
-        U, D, V = scipy.sparse.linalg.svds(B,k=pgdof-1)
-        #print(D.shape,B.shape,pgdof)
-        beta[i,0] = np.min(D)
+        beta[i,0] = Inf_Sup(mesh,uspace,pspace)
 
 
 
-        uspace = VectorFiniteElementSpace(CRFortin3DFiniteElementSpace(mesh))
-        pspace = LagrangeFiniteElementSpace(mesh,p=1,spacetype='D')
-        duphi = uspace.div_basis(bcs) #(NQ,1,uldof)
-        #uphi = uspace.basis(bcs)
-        pphi= pspace.basis(bcs) #(NQ,1,pldof)
-        #print(divubasis.shape,pbasis.shape,ubasis.shape)
-        uldof = uspace.number_of_local_dofs()
-        pldof = pspace.number_of_local_dofs()
-        B = np.einsum('i,ijk,ijm,j->jkm',ws, pphi,duphi,cellmeasure)
-        I = np.einsum('ij, k->ijk', pspace.cell_to_dof(), np.ones(uldof,dtype=int))
-        J = np.einsum('ij, k->ikj', uspace.cell_to_dof(), np.ones(pldof,dtype=int))
-
-        pgdof = pspace.number_of_global_dofs()
-        ugdof = uspace.number_of_global_dofs()
-        B = csr_matrix((B.flat, (I.flat, J.flat)), shape=(pgdof, ugdof))
-        #print(B.shape)
-        U, D, V = scipy.sparse.linalg.svds(B,k=pgdof-1)
-        #print(D.shape,B.shape,pgdof)
-        beta[i,1] = np.min(D)
-
-
-
-
-
-        uCrspace = VectorFiniteElementSpace(CRFamily3DFiniteElementSpace(mesh))
+        uspace = CRFamily3DFiniteElementSpace(mesh,p=3)
         pspace = LagrangeFiniteElementSpace(mesh,p=2,spacetype='D')
-        dcruphi = uCrspace.div_basis(bcs)
-        pphi= pspace.basis(bcs) #(NQ,1,pldof)
-        cruldof = uCrspace.number_of_local_dofs()
-        crugdof = uCrspace.number_of_global_dofs()
-        pgdof = pspace.number_of_global_dofs()
-        pldof = pspace.number_of_local_dofs()
-        B = np.einsum('i,ijk,ijm,j->jkm',ws, pphi,dcruphi,cellmeasure)
-        I = np.einsum('ij, k->ijk', pspace.cell_to_dof(), np.ones(cruldof,dtype=int))
-        J = np.einsum('ij, k->ikj', uCrspace.cell_to_dof(), np.ones(pldof,dtype=int))
+        beta[i,1] = Inf_Sup(mesh,uspace,pspace)
 
-        B = csr_matrix((B.flat, (I.flat, J.flat)), shape=(pgdof, crugdof))
-        #print(B.shape)
-        U, D, V = scipy.sparse.linalg.svds(B,k=pgdof-1)
-        beta[i,2] = np.min(D)
+
+        uspace = CRFamily3DFiniteElementSpace(mesh,p=4)
+        pspace = LagrangeFiniteElementSpace(mesh,p=3,spacetype='D',q=7)
+        beta[i,2] = Inf_Sup(mesh,uspace,pspace)
 
         if i < N-1:
             mesh.uniform_refine()
     print(beta)
+
+
     
    
 

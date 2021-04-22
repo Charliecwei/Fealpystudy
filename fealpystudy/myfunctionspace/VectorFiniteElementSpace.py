@@ -33,6 +33,7 @@ class VectorFiniteElementSpace():
         return cell2dof.reshape(NC, -1)
 
     def number_of_global_dofs(self):
+        #print(self.GD,self.scalarspace.number_of_global_dofs())
         return self.GD*self.scalarspace.number_of_global_dofs()
 
     def number_of_local_dofs(self):
