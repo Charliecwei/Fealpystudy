@@ -337,16 +337,40 @@ if __name__ == '__main__':
         B = np.einsum('i,ijk,ijm,j->jkm',ws, pphi,duphi,cellmeasure)
         I = np.einsum('ij, k->ijk', pspace.cell_to_dof(), np.ones(uldof,dtype=int))
         J = np.einsum('ij, k->ikj', uspace.cell_to_dof(), np.ones(pldof,dtype=int))
-
         pgdof = pspace.number_of_global_dofs()
         ugdof = uspace.number_of_global_dofs()
         #print(ugdof,np.max(J))
         B = csr_matrix((B.flat, (I.flat, J.flat)), shape=(pgdof, ugdof))
+
+        S = pspace.mass_matrix()
+
+        uphi = uspace.basis(bcs) #(NQ,1,uldof,GD)
+        guphi = uspace.grad_basis(bcs)#(NQ,NC,uldof,GD,GD)
+
+        I = np.einsum('ij, k->ijk', uspace.cell_to_dof(), np.ones(uldof,dtype=int))
+        J = np.einsum('ij, k->ikj', uspace.cell_to_dof(), np.ones(uldof,dtype=int))
+
+        T = np.einsum('i,ijml,ijnl,j->jmn',ws,uphi,uphi,cellmeasure)
+        T+=np.einsum('i,ijmls,ijnls,j->jmn',ws,guphi,guphi,cellmeasure)
+        T = csr_matrix((T.flat, (I.flat, J.flat)), shape=(ugdof, ugdof))
+
+
+        #B = scipy.sparse.linalg.inv(S)*B*scipy.sparse.linalg.inv(T)
+        lam_S = np.max(np.abs(scipy.sparse.linalg.eigs(S, k=2,return_eigenvectors=False)))
+        lam_T = np.max(np.abs(scipy.sparse.linalg.eigs(T, k=2,return_eigenvectors=False)))
+        
+        
+
+
+
+
+
         #print(B.shape)
         U, D, V = scipy.sparse.linalg.svds(B,k=pgdof-1)
         #print(D.shape,B.shape,pgdof)
+        #idx = D!=0
 
-        return np.min(D)
+        return np.min(D)/(np.sqrt(lam_S*lam_T))
 
 
 
@@ -354,7 +378,6 @@ if __name__ == '__main__':
 
     mesh = mf.one_tetrahedron_mesh()
 
-    #mesh.uniform_refine(1)
 
 
 
@@ -367,12 +390,14 @@ if __name__ == '__main__':
 
 
 
-    N = 4
+    N = 3
     beta = np.zeros((N,3))
     
     for i in range(N):
 
-        uspace = CRFamily3DFiniteElementSpace(mesh,p=2)
+        #uspace = CRFamily3DFiniteElementSpace(mesh,p=2)
+        #uspace = CRFortin3DFiniteElementSpace(mesh)
+        uspace = LagrangeFiniteElementSpace(mesh,p=2)
         pspace = LagrangeFiniteElementSpace(mesh,p=1,spacetype='D')
         beta[i,0] = Inf_Sup(mesh,uspace,pspace)
 

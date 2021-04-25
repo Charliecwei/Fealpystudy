@@ -42,22 +42,34 @@ class VectorFiniteElementSpace():
 
     def basis(self, bcs):
         GD = self.GD
-        phi = self.scalarspace.basis(bcs)
+        phi = self.scalarspace.basis(bcs) #(NQ,1,ldof)
         shape = list(phi.shape[:-1])
-        phi = np.einsum('...j, mn->...jmn', phi, np.eye(self.GD))
-        shape += [-1, GD] 
+        phi = np.einsum('...j, mn->...mjn', phi, np.eye(self.GD)) #(NQ,1,ldof,gidm,gidm)
+        shape += [-1, GD] #[NQ,1,-1,GD]
         phi = phi.reshape(shape)
         #print(shape,phi.shape)
         return phi
 
     def div_basis(self, bcs, cellidx=None):
         if cellidx is None:
-            gphi = self.scalarspace.grad_basis(bcs)
+            gphi = self.scalarspace.grad_basis(bcs) #(NQ,1,ldof,GD)
         else:
             gphi = self.scalarspace.grad_basis(bcs, cellidx=cellidx)
-        shape = list(gphi.shape[:-2])
-        shape += [-1]
+        shape = list(gphi.shape[:-2])#(NQ,1)
+        shape += [-1] #(NQ,1,-1)
         return gphi.reshape(shape)
+
+    def grad_basis(self,bcs):
+        GD = self.GD
+        gphi = self.scalarspace.grad_basis(bcs) #(NQ,NC,ldof,GD)
+        shape = list(gphi.shape[:-2])
+        gphi = np.einsum('...j, mn->...mjn', gphi, np.eye(self.GD))#(NQ,NC,ldof,GD,GD,GD)
+        shape +=[-1,GD,GD] #(NQ,NC,-1,GD,GD)
+        gphi = gphi.reshape(shape)#(NQ,,NC,uldof,GD,GD)
+        #print(gphi[0,0,2,...])
+        return gphi
+
+
 
     def function(self, dim=None):
         f = Function(self)
