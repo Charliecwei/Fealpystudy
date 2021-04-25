@@ -354,10 +354,11 @@ if __name__ == '__main__':
         T+=np.einsum('i,ijmls,ijnls,j->jmn',ws,guphi,guphi,cellmeasure)
         T = csr_matrix((T.flat, (I.flat, J.flat)), shape=(ugdof, ugdof))
 
-
         #B = scipy.sparse.linalg.inv(S)*B*scipy.sparse.linalg.inv(T)
-        lam_S = np.max(np.abs(scipy.sparse.linalg.eigs(S, k=2,return_eigenvectors=False)))
-        lam_T = np.max(np.abs(scipy.sparse.linalg.eigs(T, k=2,return_eigenvectors=False)))
+        #print(S.shape,pgdof)
+        
+        lam_S = np.max(np.abs(scipy.sparse.linalg.eigsh(S, k=2,return_eigenvectors=False)))
+        lam_T = np.max(np.abs(scipy.sparse.linalg.eigsh(T, k=2,return_eigenvectors=False)))
         
         
 
@@ -370,7 +371,7 @@ if __name__ == '__main__':
         #print(D.shape,B.shape,pgdof)
         #idx = D!=0
 
-        return np.min(D)/(np.sqrt(lam_S*lam_T))
+        return np.min(D[:-1])/(np.sqrt(lam_S*lam_T))
 
 
 
@@ -395,20 +396,22 @@ if __name__ == '__main__':
     
     for i in range(N):
 
-        #uspace = CRFamily3DFiniteElementSpace(mesh,p=2)
+        uspace = CRFamily3DFiniteElementSpace(mesh,p=2)
         #uspace = CRFortin3DFiniteElementSpace(mesh)
-        uspace = LagrangeFiniteElementSpace(mesh,p=2)
+        #uspace = LagrangeFiniteElementSpace(mesh,p=2)
         pspace = LagrangeFiniteElementSpace(mesh,p=1,spacetype='D')
         beta[i,0] = Inf_Sup(mesh,uspace,pspace)
 
 
 
         uspace = CRFamily3DFiniteElementSpace(mesh,p=3)
+        #uspace = LagrangeFiniteElementSpace(mesh,p=3)
         pspace = LagrangeFiniteElementSpace(mesh,p=2,spacetype='D')
         beta[i,1] = Inf_Sup(mesh,uspace,pspace)
 
 
         uspace = CRFamily3DFiniteElementSpace(mesh,p=4)
+        #uspace = LagrangeFiniteElementSpace(mesh,p=4)
         pspace = LagrangeFiniteElementSpace(mesh,p=3,spacetype='D',q=7)
         beta[i,2] = Inf_Sup(mesh,uspace,pspace)
 
